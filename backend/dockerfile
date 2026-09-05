@@ -1,0 +1,19 @@
+FROM node:20-alpine
+
+WORKDIR /app
+
+# Copy dependency definitions
+COPY package*.json ./
+
+# Install dependencies
+RUN npm ci --only=production
+
+# Copy application source code
+COPY . .
+
+# Make entrypoint scripts executable
+RUN chmod +x entrypoint.sh entrypoint-test.sh
+
+EXPOSE 3000
+
+CMD ["npm", "start"]

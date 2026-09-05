@@ -6,20 +6,21 @@ RUN apt-get update && apt-get install -y curl && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 
-# Copy package files
-COPY package*.json ./
+# Copy package files from the backend directory
+COPY backend/package*.json ./
 
 # Install all dependencies (including devDependencies needed for build/migrations)
 RUN npm ci
 
 # Set NODE_ENV=production for runtime
 ENV NODE_ENV=production
-# Copy entrypoint script
-COPY entrypoint.sh /entrypoint.sh
+
+# Copy entrypoint script from backend/
+COPY backend/entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
 
-# Copy application code
-COPY . .
+# Copy backend application code ONLY (prevents copying frontend into /app)
+COPY backend/ .
 
 # Expose port
 EXPOSE 3000
