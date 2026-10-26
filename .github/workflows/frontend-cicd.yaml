@@ -1,0 +1,122 @@
+name: Frontend CI/CD
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - "frontend/**"
+      - ".github/workflows/frontend-cicd.yaml"
+  workflow_dispatch:
+    inputs:
+      action:
+        description: Choose whether to build/push or update the manifest
+        required: true
+        type: choice
+        options:
+          - build
+          - update-manifest
+
+permissions:
+  contents: write
+  id-token: write
+
+env:
+  AWS_REGION: us-east-1
+  IMAGE_NAME: frontend
+  MANIFEST_FILE: app-manifests/frontend-deployment.yaml
+  REACT_APP_API_BASE_URL: https://api.fkvr.xyz
+
+jobs:
+  build-and-push:
+    if: github.event_name == 'push' || inputs.action == 'build'
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-region: ${{ env.AWS_REGION }}
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+
+      - name: Resolve ECR repository
+        run: |
+          account_id=$(aws sts get-caller-identity --query Account --output text)
+          echo "ECR_REPOSITORY=${account_id}.dkr.ecr.${AWS_REGION}.amazonaws.com/dev-frontend" >> "$GITHUB_ENV"
+
+      - name: Build frontend
+        working-directory: frontend
+        run: |
+          npm ci
+          npm run lint -- --max-warnings=0
+          CI=true npm test -- --watchAll=false --runInBand
+          npm run build
+
+      - name: Log in to ECR
+        run: |
+          aws ecr get-login-password --region "$AWS_REGION" |
+            docker login --username AWS --password-stdin "$ECR_REPOSITORY"
+
+      - name: Build and push frontend image
+        env:
+          IMAGE_TAG: frontend-${{ github.run_number }}
+        run: |
+          docker build \
+            --build-arg REACT_APP_API_BASE_URL="$REACT_APP_API_BASE_URL" \
+            -t "$IMAGE_NAME:$IMAGE_TAG" frontend
+          docker tag "$IMAGE_NAME:$IMAGE_TAG" "$ECR_REPOSITORY:$IMAGE_TAG"
+          docker push "$ECR_REPOSITORY:$IMAGE_TAG"
+
+      - name: Create frontend release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: frontend-${{ github.run_number }}
+        run: |
+          gh release create "$RELEASE_TAG" \
+            --title "$RELEASE_TAG" \
+            --notes "Frontend image: $ECR_REPOSITORY:$RELEASE_TAG" \
+            --target "$GITHUB_SHA"
+
+  update-manifest:
+    if: github.event_name == 'workflow_dispatch' && inputs.action == 'update-manifest'
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-region: ${{ env.AWS_REGION }}
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+
+      - name: Resolve latest frontend release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          release_tag=$(gh release list --limit 100 --json tagName,publishedAt |
+            jq -r '[.[] | select(.tagName | startswith("frontend-"))] |
+              sort_by(.publishedAt) | last.tagName')
+          test -n "$release_tag" -a "$release_tag" != "null"
+          echo "IMAGE_TAG=$release_tag" >> "$GITHUB_ENV"
+          account_id=$(aws sts get-caller-identity --query Account --output text)
+          echo "ECR_REPOSITORY=${account_id}.dkr.ecr.${AWS_REGION}.amazonaws.com/dev-frontend" >> "$GITHUB_ENV"
+
+      - name: Update frontend image tag
+        run: |
+          sed -i -E "s|^        image: .*|        image: ${ECR_REPOSITORY}:${IMAGE_TAG}|" "$MANIFEST_FILE"
+
+      - name: Commit manifest update
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add "$MANIFEST_FILE"
+          git diff --cached --quiet ||
+            git commit -m "Update frontend image to ${IMAGE_TAG}"
+          git push

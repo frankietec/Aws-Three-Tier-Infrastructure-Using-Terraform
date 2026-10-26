@@ -1,0 +1,149 @@
+name: Deploy to AWS with Terraform
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - "infra/**"
+      - ".github/workflows/infra-cicd.yaml"
+  workflow_dispatch:
+    inputs:
+      action:
+        description: Terraform action to run after review
+        required: true
+        type: choice
+        options:
+          - apply
+          - destroy
+
+permissions:
+  contents: write
+  id-token: write
+
+jobs:
+  deploy-iac:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: infra
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-region: ${{ secrets.AWS_REGION }}
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v1
+
+      - name: Install tfsec for security scanning
+        run: |
+          curl -sLo tfsec https://github.com/aquasecurity/tfsec/releases/download/v1.28.11/tfsec-linux-amd64
+          chmod +x tfsec
+          ./tfsec --version
+
+      - name: Terraform Init
+        run: terraform init
+
+      - name: Terraform Format Check
+        run: terraform fmt -check -recursive
+
+      - name: Terraform Validate
+        run: terraform validate
+
+      - name: Setup TFLint
+        uses: terraform-linters/setup-tflint@v4
+
+      - name: Terraform Lint
+        run: |
+          tflint --init
+          tflint --format compact
+
+      - name: tfsec Scan
+        run: ./tfsec .
+        continue-on-error: true
+
+      - name: Terraform Plan (AWS + EKS only)
+        run: terraform plan -var='deploy_kubernetes_resources=false' -out=tfplan
+
+      - name: Upload Terraform Plan
+        uses: actions/upload-artifact@v4
+        with:
+          name: terraform-plan
+          path: infra/tfplan
+
+  apply:
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.action == 'apply' }}
+    needs: deploy-iac
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: infra
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-region: ${{ secrets.AWS_REGION }}
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v1
+
+      - name: Terraform Init
+        run: terraform init
+
+      - name: Download Terraform Plan
+        uses: actions/download-artifact@v4
+        with:
+          name: terraform-plan
+          path: infra
+
+      - name: Terraform Apply (AWS + EKS only)
+        run: terraform apply -auto-approve -var='deploy_kubernetes_resources=false' tfplan
+
+      - name: Update kubeconfig for the newly created EKS cluster
+        run: |
+          CLUSTER_NAME=$(terraform output -raw eks_cluster_name)
+          aws eks update-kubeconfig --name "$CLUSTER_NAME" --region "${{ secrets.AWS_REGION }}"
+
+      - name: Terraform Apply (Kubernetes + Helm resources)
+        run: terraform apply -auto-approve -var='deploy_kubernetes_resources=true'
+
+  destroy:
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.action == 'destroy' }}
+    needs: deploy-iac
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: infra
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-region: ${{ secrets.AWS_REGION }}
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v1
+
+      - name: Terraform Init
+        run: terraform init
+
+      - name: Terraform Destroy
+        run: terraform destroy -auto-approve -var='deploy_kubernetes_resources=true'
