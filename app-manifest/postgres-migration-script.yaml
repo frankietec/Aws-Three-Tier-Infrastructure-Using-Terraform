@@ -1,0 +1,80 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: postgres-migration-script
+data:
+  init.sql: |
+    -- Create the PostgreSQL enum used by the Sequelize User model.
+    DO $$
+    BEGIN
+      CREATE TYPE public."enum_Users_role" AS ENUM ('employee', 'admin');
+    EXCEPTION
+      WHEN duplicate_object THEN NULL;
+    END
+    $$;
+
+    -- Users table
+    CREATE TABLE IF NOT EXISTS public."Users" (
+      "id" SERIAL PRIMARY KEY,
+      "firstName" VARCHAR(255) NOT NULL,
+      "lastName" VARCHAR(255) NOT NULL,
+      "middleName" VARCHAR(255) NOT NULL,
+      "birthDate" DATE NOT NULL,
+      "phone" VARCHAR(255) NOT NULL,
+      "email" VARCHAR(255) NOT NULL UNIQUE,
+      "programmingLanguage" VARCHAR(255) NOT NULL,
+      "country" VARCHAR(255),
+      "bankCard" VARCHAR(255),
+      "password" VARCHAR(255) NOT NULL,
+      "role" public."enum_Users_role" NOT NULL DEFAULT 'employee',
+      "registrationDate" TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+      "lastLoginDate" TIMESTAMP WITH TIME ZONE,
+      "salary" DOUBLE PRECISION DEFAULT 400,
+      "lastSalaryIncreaseDate" TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+      "position" VARCHAR(255),
+      "mentorName" VARCHAR(255),
+      "vacationDates" JSONB,
+      "githubLink" VARCHAR(255),
+      "linkedinLink" VARCHAR(255),
+      "adminNote" TEXT,
+      "englishLevel" VARCHAR(255),
+      "workingHoursPerWeek" INTEGER,
+      "hireDate" TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      "createdAt" TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      "updatedAt" TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP
+    );
+
+    -- Projects table
+    CREATE TABLE IF NOT EXISTS public."Projects" (
+      "id" SERIAL PRIMARY KEY,
+      "name" VARCHAR(255) NOT NULL UNIQUE,
+      "description" TEXT NOT NULL,
+      "wage" DOUBLE PRECISION DEFAULT 0,
+      "active" BOOLEAN NOT NULL DEFAULT TRUE,
+      "createdAt" TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      "updatedAt" TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP
+    );
+
+    -- Notifications table
+    CREATE TABLE IF NOT EXISTS public."Notifications" (
+      "id" SERIAL PRIMARY KEY,
+      "message" VARCHAR(255) NOT NULL,
+      "userId" INTEGER NOT NULL REFERENCES public."Users"("id")
+        ON UPDATE CASCADE ON DELETE CASCADE,
+      "relatedUserId" INTEGER NOT NULL REFERENCES public."Users"("id")
+        ON UPDATE CASCADE ON DELETE CASCADE,
+      "isRead" BOOLEAN DEFAULT FALSE,
+      "type" VARCHAR(255) NOT NULL DEFAULT 'general',
+      "eventDate" TIMESTAMP WITH TIME ZONE,
+      "createdAt" TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      "updatedAt" TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP
+    );
+
+    -- Many-to-many relationship between Users and Projects
+    CREATE TABLE IF NOT EXISTS public."UserProjects" (
+      "userId" INTEGER NOT NULL REFERENCES public."Users"("id")
+        ON UPDATE CASCADE ON DELETE CASCADE,
+      "projectId" INTEGER NOT NULL REFERENCES public."Projects"("id")
+        ON UPDATE CASCADE ON DELETE CASCADE,
+      PRIMARY KEY ("userId", "projectId")
+    );

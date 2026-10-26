@@ -1,0 +1,11 @@
+apiVersion: v1
+kind: ConfigMap
+
+metadata:
+  name: postgres-config
+
+data:
+  POSTGRES_HOST: "your-actual-rds-endpoint"
+  POSTGRES_PORT: "5432"
+  POSTGRES_DB: "employee_management"
+

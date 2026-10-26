@@ -36,3 +36,17 @@ swagger.json
 frontend/dist/
 frontend/build/
 
+
+**/.env.*
+**/node_modules/
+
+infra/.terraform/
+infra/.terraform.lock.hcl
+
+
+**/.terraform/*
+*.tfstate
+*.tfstate.*
+crash.log
+crash.*.log
+**/.terraform/*

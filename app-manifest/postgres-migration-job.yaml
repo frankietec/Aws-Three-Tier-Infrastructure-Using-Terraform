@@ -1,0 +1,61 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: postgres-migration
+spec:
+  backoffLimit: 4
+  ttlSecondsAfterFinished: 86400
+
+  template:
+    spec:
+      restartPolicy: Never
+
+      containers:
+        - name: postgres-migration
+          image: postgres:16-alpine
+
+          envFrom:
+            - secretRef:
+                name: postgres-secret
+            - configMapRef:
+                name: postgres-config
+
+          env:
+            - name: PGPASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: postgres-secret
+                  key: POSTGRES_PASSWORD
+            - name: PGSSLMODE
+              value: "require"
+
+          volumeMounts:
+            - name: migration-script
+              mountPath: /migrations
+              readOnly: true
+
+          command:
+            - /bin/sh
+            - -ec
+            - |
+              until pg_isready \
+                --host="$POSTGRES_HOST" \
+                --port="$POSTGRES_PORT" \
+                --username="$POSTGRES_USER" \
+                --dbname="$POSTGRES_DB"; do
+                echo "Waiting for PostgreSQL..."
+                sleep 5
+              done
+
+              psql \
+                --host="$POSTGRES_HOST" \
+                --port="$POSTGRES_PORT" \
+                --username="$POSTGRES_USER" \
+                --dbname="$POSTGRES_DB" \
+                --file=/migrations/init.sql \
+                --set=ON_ERROR_STOP=on
+
+      volumes:
+        - name: migration-script
+          configMap:
+            name: postgres-migration-script

@@ -1,19 +1,34 @@
-FROM node:20-alpine
+# Используем базовый образ Node.js
+FROM node:18-slim
 
+# Install curl for health checks
+RUN apt-get update && apt-get install -y curl && rm -rf /var/lib/apt/lists/*
+
+# Устанавливаем рабочую директорию внутри контейнера
 WORKDIR /app
 
-# Copy dependency definitions
-COPY package*.json ./
+# Копируем package.json и package-lock.json из backend/
+COPY backend/package*.json ./
 
-# Install dependencies
-RUN npm ci --only=production
+# Устанавливаем зависимости
+RUN npm ci
 
-# Copy application source code
-COPY . .
+# (Опционально) Копируем tsconfig.json, если он есть в backend/
+# COPY backend/tsconfig.json ./
 
-# Make entrypoint scripts executable
-RUN chmod +x entrypoint.sh entrypoint-test.sh
+# Копируем entrypoint скрипты из backend/
+COPY backend/entrypoint.sh /entrypoint.sh
+COPY backend/entrypoint-test.sh /entrypoint-test.sh
+RUN chmod +x /entrypoint.sh /entrypoint-test.sh
 
+# Копируем ИСКЛЮЧИТЕЛЬНО код бэкенда в /app
+COPY backend/ .
+
+# Указываем порт
 EXPOSE 3000
 
+# Устанавливаем entrypoint
+ENTRYPOINT ["/entrypoint.sh"]
+
+# Команда для запуска приложения
 CMD ["npm", "start"]
