@@ -17,6 +17,7 @@ export default function NotificationsPage() {
 
   useEffect(() => {
     fetchNotifications();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentPage]);
 
   const fetchNotifications = async () => {
@@ -32,7 +33,7 @@ export default function NotificationsPage() {
       setNotifications(data.notifications || []);
       setTotal(data.total || 0);
       setTotalPages(data.totalPages || 1);
-    } catch (error) {
+    } catch {
       toast({
         variant: "destructive",
         title: "Error",
@@ -51,7 +52,7 @@ export default function NotificationsPage() {
         description: "Notification marked as read",
       });
       fetchNotifications();
-    } catch (error) {
+    } catch {
       toast({
         variant: "destructive",
         title: "Error",

@@ -2,7 +2,7 @@ import React, { useState, useEffect } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { userService } from "../services/userService";
 import { projectService } from "../services/projectService";
-import { useAuth } from "../context/AuthContext";
+import { useAuth } from "../context/useAuth";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -42,7 +42,8 @@ export default function EmployeeDetailPage() {
     if (isAdmin) {
       fetchAvailableProjects();
     }
-  }, [id]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [id, isAdmin]);
 
   const fetchEmployee = async () => {
     setLoading(true);
@@ -51,7 +52,7 @@ export default function EmployeeDetailPage() {
       setEmployee(data);
       setFormData(data);
       setSelectedProjects(data.projects?.map(p => p.id) || []);
-    } catch (error) {
+    } catch {
       toast({
         variant: "destructive",
         title: "Error",
@@ -138,7 +139,7 @@ export default function EmployeeDetailPage() {
       const fullProject = await projectService.getProject(project.id);
       setSelectedProjectDetail(fullProject);
       setShowProjectDialog(true);
-    } catch (error) {
+    } catch {
       toast({
         variant: "destructive",
         title: "Error",

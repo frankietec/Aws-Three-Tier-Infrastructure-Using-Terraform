@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { userService } from "../services/userService";
-import { useAuth } from "../context/AuthContext";
+import { useAuth } from "../context/useAuth";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
@@ -39,6 +39,7 @@ export default function EmployeesPage() {
 
   useEffect(() => {
     fetchEmployees();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentPage, searchTerm, sortBy, order]);
 
   const fetchEmployees = async () => {
@@ -55,7 +56,7 @@ export default function EmployeesPage() {
       setEmployees(data.users || []);
       setTotal(data.total || 0);
       setTotalPages(data.totalPages || 1);
-    } catch (error) {
+    } catch {
       toast({
         variant: "destructive",
         title: "Error",
@@ -77,7 +78,7 @@ export default function EmployeesPage() {
         description: "Employee deleted successfully",
       });
       fetchEmployees();
-    } catch (error) {
+    } catch {
       toast({
         variant: "destructive",
         title: "Error",

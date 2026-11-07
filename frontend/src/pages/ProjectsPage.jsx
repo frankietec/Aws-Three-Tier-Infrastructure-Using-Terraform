@@ -1,7 +1,6 @@
 import React, { useState, useEffect } from "react";
-import { useNavigate } from "react-router-dom";
 import { projectService } from "../services/projectService";
-import { useAuth } from "../context/AuthContext";
+import { useAuth } from "../context/useAuth";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -55,6 +54,7 @@ export default function ProjectsPage() {
 
   useEffect(() => {
     fetchProjects();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentPage, searchTerm]);
 
   const fetchProjects = async () => {
@@ -68,7 +68,7 @@ export default function ProjectsPage() {
       const data = await projectService.getProjects(params);
       setProjects(data.projects || []);
       setTotalPages(data.totalPages || 1);
-    } catch (error) {
+    } catch {
       toast({
         variant: "destructive",
         title: "Error",
@@ -139,7 +139,7 @@ export default function ProjectsPage() {
         description: "Project deleted successfully",
       });
       fetchProjects();
-    } catch (error) {
+    } catch {
       toast({
         variant: "destructive",
         title: "Error",
@@ -173,7 +173,7 @@ export default function ProjectsPage() {
         employees: employeesData.employees || []
       });
       setShowViewDialog(true);
-    } catch (error) {
+    } catch {
       toast({
         variant: "destructive",
         title: "Error",
