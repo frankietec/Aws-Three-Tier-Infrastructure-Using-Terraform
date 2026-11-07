@@ -24,23 +24,45 @@ resource "helm_release" "nginx_ingress" {
 # Wait for NGINX webhook secret and patch job
 # -------------------------
 resource "null_resource" "wait_for_nginx_webhook" {
-  count      = var.deploy_kubernetes_resources ? 1 : 0
-  depends_on = [helm_release.nginx_ingress]
+  count = var.deploy_kubernetes_resources ? 1 : 0
+
+  depends_on = [
+    helm_release.nginx_ingress,
+    local_file.kubeconfig
+  ]
 
   provisioner "local-exec" {
-    command = <<EOT
-echo "Waiting for NGINX admission webhook secret..."
-until kubectl get secret ingress-nginx-admission -n ingress-nginx &> /dev/null; do
-  sleep 5
-done
+    interpreter = ["bash", "-c"]
 
-echo "Waiting for NGINX admission webhook patch job to complete..."
-while [[ $(kubectl get job ingress-nginx-admission-patch -n ingress-nginx -o jsonpath='{.status.succeeded}') != "1" ]]; do
-  sleep 5
-done
+    environment = {
+      KUBECONFIG = local_file.kubeconfig[0].filename
+    }
 
-echo "NGINX webhook ready!"
-EOT
+    command = <<-EOT
+      set -euo pipefail
+
+      echo "Waiting for NGINX controller deployment..."
+
+      kubectl wait \
+        --namespace ingress-nginx \
+        --for=condition=Available \
+        deployment/nginx-ingress-dev-ingress-nginx-controller \
+        --timeout=300s
+
+      echo "Waiting for NGINX admission secret..."
+
+      for i in $(seq 1 60); do
+        if kubectl get secrets -n ingress-nginx -o name | grep -q admission; then
+          echo "NGINX admission secret is ready."
+          exit 0
+        fi
+
+        sleep 5
+      done
+
+      echo "ERROR: NGINX admission secret was not created within 5 minutes."
+      exit 1
+    EOT
   }
 }
 
