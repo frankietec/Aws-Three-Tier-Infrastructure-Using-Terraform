@@ -114,7 +114,7 @@ jobs:
 
       - name: Update kubeconfig for the newly created EKS cluster
         run: |
-          CLUSTER_NAME=$(terraform output -raw eks_cluster_name)
+          CLUSTER_NAME="portal-app-dev-cluster"
           aws eks update-kubeconfig --name "$CLUSTER_NAME" --region "${{ secrets.AWS_REGION }}"
 
       - name: Terraform Apply (Kubernetes + Helm resources)
