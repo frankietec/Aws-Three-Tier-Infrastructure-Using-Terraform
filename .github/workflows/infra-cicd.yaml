@@ -7,6 +7,7 @@ on:
     paths:
       - "infra/**"
       - ".github/workflows/infra-cicd.yaml"
+
   workflow_dispatch:
     inputs:
       action:
@@ -18,19 +19,24 @@ on:
           - destroy
 
 permissions:
-  contents: write
-  id-token: write
+  contents: read
 
 jobs:
+
+  # ==========================================
+  # JOB 1: Terraform Validation and Planning
+  # ==========================================
+
   deploy-iac:
     runs-on: ubuntu-latest
+
     defaults:
       run:
         working-directory: infra
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
@@ -40,9 +46,9 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
 
       - name: Setup Terraform
-        uses: hashicorp/setup-terraform@v1
+        uses: hashicorp/setup-terraform@v3
 
-      - name: Install tfsec for security scanning
+      - name: Install tfsec
         run: |
           curl -sLo tfsec https://github.com/aquasecurity/tfsec/releases/download/v1.28.11/tfsec-linux-amd64
           chmod +x tfsec
@@ -69,26 +75,47 @@ jobs:
         run: ./tfsec .
         continue-on-error: true
 
+      - name: Verify AWS Account
+        run: |
+          aws sts get-caller-identity
+          ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+
+          if [ "$ACCOUNT_ID" != "501579413510" ]; then
+            echo "ERROR: Unexpected AWS account: $ACCOUNT_ID"
+            exit 1
+          fi
+
+          echo "Confirmed AWS account: $ACCOUNT_ID"
+
       - name: Terraform Plan (AWS + EKS only)
-        run: terraform plan -var='deploy_kubernetes_resources=false' -out=tfplan
+        run: |
+          terraform plan \
+            -var="deploy_kubernetes_resources=false" \
+            -out=tfplan
 
       - name: Upload Terraform Plan
         uses: actions/upload-artifact@v4
         with:
           name: terraform-plan
           path: infra/tfplan
+          retention-days: 1
+
+  # ==========================================
+  # JOB 2: Apply AWS, EKS and Kubernetes
+  # ==========================================
 
   apply:
     if: ${{ github.event_name == 'workflow_dispatch' && inputs.action == 'apply' }}
     needs: deploy-iac
     runs-on: ubuntu-latest
+
     defaults:
       run:
         working-directory: infra
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
@@ -98,7 +125,7 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
 
       - name: Setup Terraform
-        uses: hashicorp/setup-terraform@v1
+        uses: hashicorp/setup-terraform@v3
 
       - name: Terraform Init
         run: terraform init
@@ -109,28 +136,98 @@ jobs:
           name: terraform-plan
           path: infra
 
+      # --------------------------------------
+      # First Apply: AWS Infrastructure + EKS
+      # --------------------------------------
+
       - name: Terraform Apply (AWS + EKS only)
-        run: terraform apply -auto-approve -var='deploy_kubernetes_resources=false' tfplan
+        run: terraform apply -auto-approve tfplan
 
-      - name: Update kubeconfig for the newly created EKS cluster
+      # --------------------------------------
+      # Retrieve EKS connection information
+      # --------------------------------------
+
+      - name: Configure EKS connection details
+        shell: bash
         run: |
-          CLUSTER_NAME="portal-app-dev-cluster"
-          aws eks update-kubeconfig --name "$CLUSTER_NAME" --region "${{ secrets.AWS_REGION }}"
+          set -euo pipefail
 
-      - name: Terraform Apply (Kubernetes + Helm resources)
-        run: terraform apply -auto-approve -var='deploy_kubernetes_resources=true'
+          CLUSTER_NAME="portal-app-dev-cluster"
+          REGION="${{ secrets.AWS_REGION }}"
+
+          echo "Retrieving EKS connection information..."
+
+          aws eks update-kubeconfig \
+            --name "$CLUSTER_NAME" \
+            --region "$REGION"
+
+          EKS_ENDPOINT=$(aws eks describe-cluster \
+            --name "$CLUSTER_NAME" \
+            --region "$REGION" \
+            --query "cluster.endpoint" \
+            --output text)
+
+          EKS_CA=$(aws eks describe-cluster \
+            --name "$CLUSTER_NAME" \
+            --region "$REGION" \
+            --query "cluster.certificateAuthority.data" \
+            --output text)
+
+          if [[ -z "$EKS_ENDPOINT" || "$EKS_ENDPOINT" == "None" ]]; then
+            echo "ERROR: EKS endpoint was not retrieved."
+            exit 1
+          fi
+
+          if [[ -z "$EKS_CA" || "$EKS_CA" == "None" ]]; then
+            echo "ERROR: EKS certificate was not retrieved."
+            exit 1
+          fi
+
+          {
+            echo "TF_VAR_kubernetes_host=$EKS_ENDPOINT"
+            echo "TF_VAR_kubernetes_cluster_ca_certificate=$EKS_CA"
+          } >> "$GITHUB_ENV"
+
+          echo "EKS connection details configured successfully."
+
+      # --------------------------------------
+      # Install kubectl
+      # --------------------------------------
+
+      - name: Install kubectl
+        uses: azure/setup-kubectl@v4
+        with:
+          version: 'v1.35.0'
+
+      - name: Verify kubectl installation
+        run: kubectl version --client
+
+      # --------------------------------------
+      # Second Apply: Kubernetes + Helm
+      # --------------------------------------
+
+      - name: Terraform Apply (Kubernetes + Helm)
+        run: |
+          terraform apply \
+            -auto-approve \
+            -var="deploy_kubernetes_resources=true"
+
+  # ==========================================
+  # JOB 3: Destroy Infrastructure
+  # ==========================================
 
   destroy:
     if: ${{ github.event_name == 'workflow_dispatch' && inputs.action == 'destroy' }}
     needs: deploy-iac
     runs-on: ubuntu-latest
+
     defaults:
       run:
         working-directory: infra
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
@@ -140,10 +237,72 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
 
       - name: Setup Terraform
-        uses: hashicorp/setup-terraform@v1
+        uses: hashicorp/setup-terraform@v3
 
       - name: Terraform Init
         run: terraform init
 
+      - name: Verify AWS Account
+        run: |
+          ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+
+          if [ "$ACCOUNT_ID" != "501579413510" ]; then
+            echo "ERROR: Unexpected AWS account: $ACCOUNT_ID"
+            exit 1
+          fi
+
+          echo "Confirmed AWS account: $ACCOUNT_ID"
+
+      - name: Configure EKS connection details
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          CLUSTER_NAME="portal-app-dev-cluster"
+          REGION="${{ secrets.AWS_REGION }}"
+
+          echo "Retrieving EKS connection information..."
+
+          aws eks update-kubeconfig \
+            --name "$CLUSTER_NAME" \
+            --region "$REGION"
+
+          EKS_ENDPOINT=$(aws eks describe-cluster \
+            --name "$CLUSTER_NAME" \
+            --region "$REGION" \
+            --query "cluster.endpoint" \
+            --output text)
+
+          EKS_CA=$(aws eks describe-cluster \
+            --name "$CLUSTER_NAME" \
+            --region "$REGION" \
+            --query "cluster.certificateAuthority.data" \
+            --output text)
+
+          if [[ -z "$EKS_ENDPOINT" || "$EKS_ENDPOINT" == "None" ]]; then
+            echo "ERROR: EKS endpoint was not retrieved."
+            exit 1
+          fi
+
+          if [[ -z "$EKS_CA" || "$EKS_CA" == "None" ]]; then
+            echo "ERROR: EKS certificate was not retrieved."
+            exit 1
+          fi
+
+          {
+            echo "TF_VAR_kubernetes_host=$EKS_ENDPOINT"
+            echo "TF_VAR_kubernetes_cluster_ca_certificate=$EKS_CA"
+          } >> "$GITHUB_ENV"
+
+          echo "EKS connection details configured successfully."
+
+      - name: Install kubectl
+        uses: azure/setup-kubectl@v4
+        with:
+          version: 'v1.35.0'
+
       - name: Terraform Destroy
-        run: terraform destroy -auto-approve -var='deploy_kubernetes_resources=true'
+        run: |
+          terraform destroy \
+            -auto-approve \
+            -var="deploy_kubernetes_resources=true"

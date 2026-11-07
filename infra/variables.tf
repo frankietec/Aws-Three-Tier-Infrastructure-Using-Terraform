@@ -27,12 +27,7 @@ variable "kubernetes_cluster_ca_certificate" {
   default     = ""
 }
 
-variable "kubernetes_token" {
-  description = "Bearer token for the Kubernetes provider. Provide only in the post-cluster phase."
-  type        = string
-  default     = ""
-  sensitive   = true
-}
+
 
 ############################################
 # VPC Variables

@@ -1,3 +1,4 @@
+
 # Useful outputs for post-deploy
 
 # EKS
@@ -70,7 +71,6 @@ output "route53_nameservers" {
 #   value       = namecheap_domain_dns.update_ns.nameservers
 # }
 
-
 # ECR
 output "frontend_ecr_url" {
   value = aws_ecr_repository.frontend.repository_url
@@ -80,12 +80,10 @@ output "backend_ecr_url" {
   value = aws_ecr_repository.backend.repository_url
 }
 
-#Check whether cluster-issuer is ready
+# Check whether cluster-issuer is ready
 
-
-
-# R53 Records
+# Route53 Records
 output "root_domain_full_record" {
-  value       = var.deploy_kubernetes_resources ? aws_route53_record.root[0] : null
   description = "Full Route53 record object for the root domain"
+  value       = var.deploy_kubernetes_resources ? aws_route53_record.root[0] : null
 }

@@ -1,4 +1,3 @@
-
 terraform {
   required_providers {
     aws = {
@@ -42,27 +41,26 @@ provider "aws" {
 }
 
 # --------------------------------------------------
-# EKS Data Sources
-# --------------------------------------------------
-
-data "aws_eks_cluster" "cluster" {
-  name       = module.eks.cluster_name
-  depends_on = [module.eks]
-}
-
-data "aws_eks_cluster_auth" "cluster" {
-  name       = module.eks.cluster_name
-  depends_on = [module.eks]
-}
-
-# --------------------------------------------------
 # Default Kubernetes Provider
 # --------------------------------------------------
 
 provider "kubernetes" {
   host                   = var.kubernetes_host != "" ? var.kubernetes_host : null
-  cluster_ca_certificate = var.kubernetes_cluster_ca_certificate != "" ? var.kubernetes_cluster_ca_certificate : null
-  token                  = var.kubernetes_token != "" ? var.kubernetes_token : null
+  cluster_ca_certificate = var.kubernetes_cluster_ca_certificate != "" ? base64decode(var.kubernetes_cluster_ca_certificate) : null
+
+  exec {
+    api_version = "client.authentication.k8s.io/v1beta1"
+    command     = "aws"
+
+    args = [
+      "eks",
+      "get-token",
+      "--cluster-name",
+      "${var.project_name}-${var.environment}-cluster",
+      "--region",
+      var.aws_region
+    ]
+  }
 }
 
 # --------------------------------------------------
@@ -70,20 +68,47 @@ provider "kubernetes" {
 # --------------------------------------------------
 
 provider "kubernetes" {
-  alias                  = "post_eks"
+  alias = "post_eks"
+
   host                   = var.kubernetes_host != "" ? var.kubernetes_host : null
-  cluster_ca_certificate = var.kubernetes_cluster_ca_certificate != "" ? var.kubernetes_cluster_ca_certificate : null
-  token                  = var.kubernetes_token != "" ? var.kubernetes_token : null
+  cluster_ca_certificate = var.kubernetes_cluster_ca_certificate != "" ? base64decode(var.kubernetes_cluster_ca_certificate) : null
+
+  exec {
+    api_version = "client.authentication.k8s.io/v1beta1"
+    command     = "aws"
+
+    args = [
+      "eks",
+      "get-token",
+      "--cluster-name",
+      "${var.project_name}-${var.environment}-cluster",
+      "--region",
+      var.aws_region
+    ]
+  }
 }
 
 # --------------------------------------------------
-# Helm Provider
+# Helm Provider 3.x
 # --------------------------------------------------
 
 provider "helm" {
   kubernetes = {
     host                   = var.kubernetes_host != "" ? var.kubernetes_host : null
-    cluster_ca_certificate = var.kubernetes_cluster_ca_certificate != "" ? var.kubernetes_cluster_ca_certificate : null
-    token                  = var.kubernetes_token != "" ? var.kubernetes_token : null
+    cluster_ca_certificate = var.kubernetes_cluster_ca_certificate != "" ? base64decode(var.kubernetes_cluster_ca_certificate) : null
+
+    exec = {
+      api_version = "client.authentication.k8s.io/v1beta1"
+      command     = "aws"
+
+      args = [
+        "eks",
+        "get-token",
+        "--cluster-name",
+        "${var.project_name}-${var.environment}-cluster",
+        "--region",
+        var.aws_region
+      ]
+    }
   }
 }

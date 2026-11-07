@@ -66,9 +66,34 @@ resource "helm_release" "cert_manager" {
   depends_on = [module.eks]
 }
 
+
+# =========================================================
+# Create ClusterIssuer
+# =========================================================
+
+resource "null_resource" "create_cluster_issuer" {
+  count = var.deploy_kubernetes_resources ? 1 : 0
+
+  depends_on = [
+    helm_release.cert_manager,
+    local_file.kubeconfig
+  ]
+
+  provisioner "local-exec" {
+    interpreter = ["bash", "-c"]
+
+    environment = {
+      KUBECONFIG = local_file.kubeconfig[0].filename
+    }
+
+    command = "kubectl apply -f ${path.module}/cluster-issuer.yaml"
+  }
+}
+
 # -------------------------
 # Kubeconfig for local-exec
 # -------------------------
+
 resource "local_file" "kubeconfig" {
   count    = var.deploy_kubernetes_resources ? 1 : 0
   filename = "${path.module}/kubeconfig"
@@ -78,43 +103,36 @@ resource "local_file" "kubeconfig" {
   content = <<EOF
 apiVersion: v1
 kind: Config
+
 clusters:
 - name: eks
   cluster:
-    server: ${data.aws_eks_cluster.cluster.endpoint}
-    certificate-authority-data: ${data.aws_eks_cluster.cluster.certificate_authority[0].data}
+    server: ${var.kubernetes_host}
+    certificate-authority-data: ${var.kubernetes_cluster_ca_certificate}
+
 contexts:
 - name: eks
   context:
     cluster: eks
     user: eks
+
 current-context: eks
+
 users:
 - name: eks
   user:
-    token: ${data.aws_eks_cluster_auth.cluster.token}
+    exec:
+      apiVersion: client.authentication.k8s.io/v1beta1
+      command: aws
+      args:
+        - eks
+        - get-token
+        - --cluster-name
+        - ${var.project_name}-${var.environment}-cluster
+        - --region
+        - ${var.aws_region}
 EOF
 }
-
-# -------------------------
-# Apply ClusterIssuer
-# -------------------------
-resource "null_resource" "create_cluster_issuer" {
-  count = var.deploy_kubernetes_resources ? 1 : 0
-  depends_on = [
-    helm_release.cert_manager,
-    local_file.kubeconfig
-  ]
-
-  provisioner "local-exec" {
-    environment = {
-      KUBECONFIG = local_file.kubeconfig[0].filename
-    }
-
-    command = "kubectl apply -f cluster-issuer.yaml"
-  }
-}
-
 # -------------------------
 # ArgoCD via Helm
 # -------------------------
