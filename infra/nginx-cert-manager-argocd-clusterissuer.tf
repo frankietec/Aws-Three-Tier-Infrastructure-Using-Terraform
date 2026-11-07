@@ -31,6 +31,12 @@ resource "null_resource" "wait_for_nginx_webhook" {
     local_file.kubeconfig
   ]
 
+  # Force the old, incorrectly successful provisioner to run again.
+  triggers = {
+    readiness_check_version = "2"
+    admission_secret        = "nginx-ingress-dev-ingress-nginx-admission"
+  }
+
   provisioner "local-exec" {
     interpreter = ["bash", "-c"]
 
@@ -41,30 +47,35 @@ resource "null_resource" "wait_for_nginx_webhook" {
     command = <<-EOT
       set -euo pipefail
 
-      echo "Waiting for NGINX controller deployment..."
+      NAMESPACE="ingress-nginx"
+      SECRET="nginx-ingress-dev-ingress-nginx-admission"
+      SERVICE="nginx-ingress-dev-ingress-nginx-controller-admission"
 
-      kubectl wait \
-        --namespace ingress-nginx \
-        --for=condition=Available \
-        deployment/nginx-ingress-dev-ingress-nginx-controller \
-        --timeout=300s
+      echo "Waiting for NGINX admission secret and webhook endpoint..."
 
-      echo "Waiting for NGINX admission secret..."
+      for attempt in $(seq 1 60); do
+        if kubectl get secret "$SECRET" -n "$NAMESPACE" >/dev/null 2>&1; then
+          ENDPOINTS=$(kubectl get endpoints "$SERVICE" \
+            -n "$NAMESPACE" \
+            -o jsonpath='{.subsets[*].addresses[*].ip}' 2>/dev/null || true)
 
-      for i in $(seq 1 60); do
-        if kubectl get secrets -n ingress-nginx -o name | grep -q admission; then
-          echo "NGINX admission secret is ready."
-          exit 0
+          if [ -n "$ENDPOINTS" ]; then
+            echo "NGINX admission secret found."
+            echo "NGINX admission endpoint ready: $ENDPOINTS"
+            exit 0
+          fi
         fi
 
+        echo "Attempt $attempt/60: waiting..."
         sleep 5
       done
 
-      echo "ERROR: NGINX admission secret was not created within 5 minutes."
+      echo "ERROR: NGINX admission webhook did not become ready."
       exit 1
     EOT
   }
 }
+
 
 # -------------------------
 # Cert-Manager via Helm

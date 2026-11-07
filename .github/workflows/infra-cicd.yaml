@@ -1,3 +1,4 @@
+
 name: Deploy to AWS with Terraform
 
 on:
@@ -45,6 +46,73 @@ jobs:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
 
+      - name: Verify AWS Account
+        run: |
+          set -euo pipefail
+
+          ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+
+          if [ "$ACCOUNT_ID" != "501579413510" ]; then
+            echo "ERROR: Unexpected AWS account: $ACCOUNT_ID"
+            exit 1
+          fi
+
+          echo "Confirmed AWS account: $ACCOUNT_ID"
+
+      - name: Configure EKS connection details
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          CLUSTER_NAME="portal-app-dev-cluster"
+          REGION="${{ secrets.AWS_REGION }}"
+
+          echo "Checking EKS cluster..."
+
+          CLUSTER_STATUS=$(aws eks describe-cluster \
+            --name "$CLUSTER_NAME" \
+            --region "$REGION" \
+            --query "cluster.status" \
+            --output text)
+
+          if [ "$CLUSTER_STATUS" != "ACTIVE" ]; then
+            echo "ERROR: EKS cluster status is $CLUSTER_STATUS"
+            exit 1
+          fi
+
+          aws eks update-kubeconfig \
+            --name "$CLUSTER_NAME" \
+            --region "$REGION"
+
+          EKS_ENDPOINT=$(aws eks describe-cluster \
+            --name "$CLUSTER_NAME" \
+            --region "$REGION" \
+            --query "cluster.endpoint" \
+            --output text)
+
+          EKS_CA=$(aws eks describe-cluster \
+            --name "$CLUSTER_NAME" \
+            --region "$REGION" \
+            --query "cluster.certificateAuthority.data" \
+            --output text)
+
+          if [[ -z "$EKS_ENDPOINT" || "$EKS_ENDPOINT" == "None" ]]; then
+            echo "ERROR: EKS endpoint was not retrieved."
+            exit 1
+          fi
+
+          if [[ -z "$EKS_CA" || "$EKS_CA" == "None" ]]; then
+            echo "ERROR: EKS certificate was not retrieved."
+            exit 1
+          fi
+
+          {
+            echo "TF_VAR_kubernetes_host=$EKS_ENDPOINT"
+            echo "TF_VAR_kubernetes_cluster_ca_certificate=$EKS_CA"
+          } >> "$GITHUB_ENV"
+
+          echo "EKS connection details configured successfully."
+
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
 
@@ -75,22 +143,10 @@ jobs:
         run: ./tfsec .
         continue-on-error: true
 
-      - name: Verify AWS Account
-        run: |
-          aws sts get-caller-identity
-          ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
-
-          if [ "$ACCOUNT_ID" != "501579413510" ]; then
-            echo "ERROR: Unexpected AWS account: $ACCOUNT_ID"
-            exit 1
-          fi
-
-          echo "Confirmed AWS account: $ACCOUNT_ID"
-
-      - name: Terraform Plan (AWS + EKS only)
+      - name: Terraform Plan
         run: |
           terraform plan \
-            -var="deploy_kubernetes_resources=false" \
+            -var="deploy_kubernetes_resources=true" \
             -out=tfplan
 
       - name: Upload Terraform Plan
@@ -101,7 +157,7 @@ jobs:
           retention-days: 1
 
   # ==========================================
-  # JOB 2: Apply AWS, EKS and Kubernetes
+  # JOB 2: Apply Infrastructure
   # ==========================================
 
   apply:
@@ -124,28 +180,18 @@ jobs:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
 
-      - name: Setup Terraform
-        uses: hashicorp/setup-terraform@v3
+      - name: Verify AWS Account
+        run: |
+          set -euo pipefail
 
-      - name: Terraform Init
-        run: terraform init
+          ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
 
-      - name: Download Terraform Plan
-        uses: actions/download-artifact@v4
-        with:
-          name: terraform-plan
-          path: infra
+          if [ "$ACCOUNT_ID" != "501579413510" ]; then
+            echo "ERROR: Unexpected AWS account: $ACCOUNT_ID"
+            exit 1
+          fi
 
-      # --------------------------------------
-      # First Apply: AWS Infrastructure + EKS
-      # --------------------------------------
-
-      - name: Terraform Apply (AWS + EKS only)
-        run: terraform apply -auto-approve tfplan
-
-      # --------------------------------------
-      # Retrieve EKS connection information
-      # --------------------------------------
+          echo "Confirmed AWS account: $ACCOUNT_ID"
 
       - name: Configure EKS connection details
         shell: bash
@@ -154,8 +200,6 @@ jobs:
 
           CLUSTER_NAME="portal-app-dev-cluster"
           REGION="${{ secrets.AWS_REGION }}"
-
-          echo "Retrieving EKS connection information..."
 
           aws eks update-kubeconfig \
             --name "$CLUSTER_NAME" \
@@ -190,10 +234,6 @@ jobs:
 
           echo "EKS connection details configured successfully."
 
-      # --------------------------------------
-      # Install kubectl
-      # --------------------------------------
-
       - name: Install kubectl
         uses: azure/setup-kubectl@v4
         with:
@@ -202,15 +242,20 @@ jobs:
       - name: Verify kubectl installation
         run: kubectl version --client
 
-      # --------------------------------------
-      # Second Apply: Kubernetes + Helm
-      # --------------------------------------
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
 
-      - name: Terraform Apply (Kubernetes + Helm)
-        run: |
-          terraform apply \
-            -auto-approve \
-            -var="deploy_kubernetes_resources=true"
+      - name: Terraform Init
+        run: terraform init
+
+      - name: Download Terraform Plan
+        uses: actions/download-artifact@v4
+        with:
+          name: terraform-plan
+          path: infra
+
+      - name: Terraform Apply
+        run: terraform apply -auto-approve tfplan
 
   # ==========================================
   # JOB 3: Destroy Infrastructure
@@ -236,14 +281,10 @@ jobs:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
 
-      - name: Setup Terraform
-        uses: hashicorp/setup-terraform@v3
-
-      - name: Terraform Init
-        run: terraform init
-
       - name: Verify AWS Account
         run: |
+          set -euo pipefail
+
           ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
 
           if [ "$ACCOUNT_ID" != "501579413510" ]; then
@@ -260,8 +301,6 @@ jobs:
 
           CLUSTER_NAME="portal-app-dev-cluster"
           REGION="${{ secrets.AWS_REGION }}"
-
-          echo "Retrieving EKS connection information..."
 
           aws eks update-kubeconfig \
             --name "$CLUSTER_NAME" \
@@ -296,10 +335,11 @@ jobs:
 
           echo "EKS connection details configured successfully."
 
-      - name: Install kubectl
-        uses: azure/setup-kubectl@v4
-        with:
-          version: 'v1.35.0'
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+
+      - name: Terraform Init
+        run: terraform init
 
       - name: Terraform Destroy
         run: |
