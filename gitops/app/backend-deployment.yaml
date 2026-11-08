@@ -16,7 +16,7 @@ spec:
     spec:
       containers:
         - name: backend
-          image: 501579413510.dkr.ecr.us-east-1.amazonaws.com/dev-backend:backend-ssl-fix-20261109
+          image: 501579413510.dkr.ecr.us-east-1.amazonaws.com/dev-backend:backend-9-1
           ports:
             - containerPort: 3000
           readinessProbe:
