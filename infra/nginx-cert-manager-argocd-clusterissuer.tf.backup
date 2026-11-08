@@ -1,0 +1,248 @@
+# -------------------------
+# NGINX Ingress via Helm
+# -------------------------
+resource "helm_release" "nginx_ingress" {
+  count            = var.deploy_kubernetes_resources ? 1 : 0
+  provider         = helm
+  name             = "nginx-ingress-${var.environment}"
+  repository       = "https://kubernetes.github.io/ingress-nginx"
+  chart            = "ingress-nginx"
+  version          = "4.12.0"
+  namespace        = "ingress-nginx"
+  create_namespace = true
+  timeout          = 600
+  wait             = true # Wait for all resources to be ready
+
+  values = [
+    file("nginx-values.yaml")
+  ]
+
+  depends_on = [module.eks]
+}
+
+# -------------------------
+# Wait for NGINX webhook secret and patch job
+# -------------------------
+resource "null_resource" "wait_for_nginx_webhook" {
+  count = var.deploy_kubernetes_resources ? 1 : 0
+
+  depends_on = [
+    helm_release.nginx_ingress,
+    local_file.kubeconfig
+  ]
+
+  # Force the old, incorrectly successful provisioner to run again.
+  triggers = {
+    readiness_check_version = "2"
+    admission_secret        = "nginx-ingress-dev-ingress-nginx-admission"
+  }
+
+  provisioner "local-exec" {
+    interpreter = ["bash", "-c"]
+
+    environment = {
+      KUBECONFIG = local_file.kubeconfig[0].filename
+    }
+
+    command = <<-EOT
+      set -euo pipefail
+
+      NAMESPACE="ingress-nginx"
+      SECRET="nginx-ingress-dev-ingress-nginx-admission"
+      SERVICE="nginx-ingress-dev-ingress-nginx-controller-admission"
+
+      echo "Waiting for NGINX admission secret and webhook endpoint..."
+
+      for attempt in $(seq 1 60); do
+        if kubectl get secret "$SECRET" -n "$NAMESPACE" >/dev/null 2>&1; then
+          ENDPOINTS=$(kubectl get endpoints "$SERVICE" \
+            -n "$NAMESPACE" \
+            -o jsonpath='{.subsets[*].addresses[*].ip}' 2>/dev/null || true)
+
+          if [ -n "$ENDPOINTS" ]; then
+            echo "NGINX admission secret found."
+            echo "NGINX admission endpoint ready: $ENDPOINTS"
+            exit 0
+          fi
+        fi
+
+        echo "Attempt $attempt/60: waiting..."
+        sleep 5
+      done
+
+      echo "ERROR: NGINX admission webhook did not become ready."
+      exit 1
+    EOT
+  }
+}
+
+
+# -------------------------
+# Cert-Manager via Helm
+# -------------------------
+resource "helm_release" "cert_manager" {
+  count            = var.deploy_kubernetes_resources ? 1 : 0
+  provider         = helm
+  name             = "cert-manager-${var.environment}"
+  repository       = "https://charts.jetstack.io"
+  chart            = "cert-manager"
+  version          = "1.14.5"
+  namespace        = "cert-manager"
+  create_namespace = true
+  timeout          = 600
+  wait             = true
+
+  values = [
+    file("cert-manager-values.yaml")
+  ]
+
+  depends_on = [module.eks]
+}
+
+
+# =========================================================
+# Create ClusterIssuer
+# =========================================================
+
+resource "null_resource" "create_cluster_issuer" {
+  count = var.deploy_kubernetes_resources ? 1 : 0
+
+  depends_on = [
+    helm_release.cert_manager,
+    local_file.kubeconfig
+  ]
+
+  provisioner "local-exec" {
+    interpreter = ["bash", "-c"]
+
+    environment = {
+      KUBECONFIG = local_file.kubeconfig[0].filename
+    }
+
+    command = "kubectl apply -f ${path.module}/cluster-issuer.yaml"
+  }
+}
+
+# -------------------------
+# Kubeconfig for local-exec
+# -------------------------
+
+resource "local_file" "kubeconfig" {
+  count    = var.deploy_kubernetes_resources ? 1 : 0
+  filename = "${path.module}/kubeconfig"
+
+  depends_on = [module.eks]
+
+  content = <<EOF
+apiVersion: v1
+kind: Config
+
+clusters:
+- name: eks
+  cluster:
+    server: ${var.kubernetes_host}
+    certificate-authority-data: ${var.kubernetes_cluster_ca_certificate}
+
+contexts:
+- name: eks
+  context:
+    cluster: eks
+    user: eks
+
+current-context: eks
+
+users:
+- name: eks
+  user:
+    exec:
+      apiVersion: client.authentication.k8s.io/v1beta1
+      command: aws
+      args:
+        - eks
+        - get-token
+        - --cluster-name
+        - ${var.project_name}-${var.environment}-cluster
+        - --region
+        - ${var.aws_region}
+EOF
+}
+# -------------------------
+# ArgoCD via Helm
+# -------------------------
+resource "helm_release" "argocd" {
+  count            = var.deploy_kubernetes_resources ? 1 : 0
+  provider         = helm
+  name             = "argocd"
+  repository       = "https://argoproj.github.io/argo-helm"
+  chart            = "argo-cd"
+  version          = "5.51.6"
+  namespace        = "argocd"
+  create_namespace = true
+  timeout          = 600
+  wait             = true
+
+  values = [
+    file("argocd-values.yaml")
+  ]
+
+  depends_on = [
+    null_resource.wait_for_nginx_webhook,
+    null_resource.create_cluster_issuer
+  ]
+}
+
+# -------------------------
+# kube-prometheus-stack via Helm
+# -------------------------
+resource "helm_release" "kube_prometheus_stack" {
+  count            = var.deploy_kubernetes_resources ? 1 : 0
+  provider         = helm
+  name             = "prometheus"
+  repository       = "https://prometheus-community.github.io/helm-charts"
+  chart            = "kube-prometheus-stack"
+  version          = "70.4.1"
+  namespace        = "monitoring"
+  create_namespace = true
+  timeout          = 900
+  wait             = true
+  atomic           = true
+
+  values = [
+    file("${path.module}/kube-prometheus-stack-values.yaml")
+  ]
+
+  set_sensitive = [
+    {
+      name  = "grafana.adminPassword"
+      value = random_password.grafana_admin.result
+    }
+  ]
+
+  depends_on = [
+    helm_release.nginx_ingress,
+    null_resource.create_cluster_issuer,
+    kubernetes_storage_class_v1.ebs_gp3,
+  ]
+}
+
+
+# -------------------------
+# Apply Argocd-ingress
+# -------------------------
+resource "null_resource" "apply_argocd_ingress" {
+  count = var.deploy_kubernetes_resources ? 1 : 0
+  depends_on = [
+    helm_release.argocd,        # wait for ArgoCD to be installed
+    helm_release.nginx_ingress, # optional, ensures ingress controller exists
+    null_resource.create_cluster_issuer,
+  ]
+
+  provisioner "local-exec" {
+    environment = {
+      KUBECONFIG = local_file.kubeconfig[0].filename
+    }
+
+    command = "kubectl apply -f ${path.module}/argocd-ingress.yaml"
+
+  }
+}

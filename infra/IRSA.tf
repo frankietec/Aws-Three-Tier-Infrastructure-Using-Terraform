@@ -73,20 +73,26 @@ resource "kubernetes_service_account" "rds_access" {
 
 resource "kubernetes_secret" "rds_credentials" {
   count    = var.deploy_kubernetes_resources ? 1 : 0
-  provider = kubernetes.post_eks # use alias
+  provider = kubernetes.post_eks
+
   metadata {
     name      = "rds-credentials"
     namespace = "default"
   }
 
   data = {
-    username = base64encode(var.rds_username)
-    password = base64encode(var.rds_password)
-    host     = base64encode(aws_db_instance.postgres.endpoint)
-    port     = base64encode(tostring(aws_db_instance.postgres.port))
-    dbname   = base64encode(var.rds_dbname)
+    username     = var.rds_username
+    password     = var.rds_password
+    host         = aws_db_instance.postgres.address
+    port         = tostring(aws_db_instance.postgres.port)
+    dbname       = var.rds_dbname
+    database_url = "postgresql://${urlencode(var.rds_username)}:${urlencode(var.rds_password)}@${aws_db_instance.postgres.address}:${aws_db_instance.postgres.port}/${var.rds_dbname}?sslmode=require"
   }
 
-  type       = "Opaque"
-  depends_on = [module.eks, aws_db_instance.postgres]
+  type = "Opaque"
+
+  depends_on = [
+    module.eks,
+    aws_db_instance.postgres
+  ]
 }

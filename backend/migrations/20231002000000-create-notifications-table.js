@@ -1,4 +1,3 @@
-// migrations/XXXXXXXXXXXXXX-create-notifications-table.js
 "use strict";
 
 module.exports = {
@@ -47,7 +46,7 @@ module.exports = {
             "birthday_reminder",
             "birthday",
             "salary_increase_reminder",
-            "salary_increase",
+            "salary_increased",
             "salary_threshold_reached",
             "welcome",
             "general",
@@ -55,10 +54,12 @@ module.exports = {
             "user_update"
           ),
           allowNull: false,
+          defaultValue: "general",
         },
         eventDate: {
           type: Sequelize.DATEONLY,
           allowNull: false,
+          defaultValue: Sequelize.literal("CURRENT_DATE"),
         },
         isRead: {
           type: Sequelize.BOOLEAN,
@@ -77,12 +78,14 @@ module.exports = {
         },
       },
       {
-        schema: "public", // Указываем схему
+        schema: "public",
       }
     );
   },
 
   down: async (queryInterface, Sequelize) => {
-    await queryInterface.dropTable("Notifications", { schema: "public" });
+    await queryInterface.dropTable("Notifications", {
+      schema: "public",
+    });
   },
 };

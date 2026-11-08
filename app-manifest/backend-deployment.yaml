@@ -15,28 +15,17 @@ spec:
         app: backend
     spec:
       containers:
-      - name: backend
-        image: 945253721395.dkr.ecr.us-east-1.amazonaws.com/dev-backend:backend-1
-        ports:
-        - containerPort: 3000
-        env:
-        - name: CORS_ORIGIN
-          value: "*"
-
-        - name: MYSQL_HOST
-          value: mysql
-
-        - name: MYSQL_USER
-          value: root
-
-        - name: MYSQL_DATABASE
-          valueFrom:
-          configMapKeyRef:
-            name: mysql-config
-            key: MYSQL_ROOT_DATABASE
-
-        - name: MYSQL_PASSWORD
-          valueFrom:
-          configMapKeyRef:
-            name: mysql-config
-            key: MYSQL_ROOT_PASSWORD
+        - name: backend
+          image: 501579413510.dkr.ecr.us-east-1.amazonaws.com/dev-backend:backend-1
+          ports:
+            - containerPort: 3000
+          env:
+            - name: NODE_ENV
+              value: production
+            - name: CORS_ORIGIN
+              value: "*"
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: rds-credentials
+                  key: database_url

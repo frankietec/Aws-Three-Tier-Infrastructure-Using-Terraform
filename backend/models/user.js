@@ -23,14 +23,22 @@ module.exports = (sequelize, DataTypes) => {
         allowNull: false,
         defaultValue: 'employee',
       },
-      registrationDate: { type: DataTypes.DATE, defaultValue: DataTypes.NOW },
-      lastLoginDate: { type: DataTypes.DATE },
+     registrationDate: {
+  type: DataTypes.DATE,
+  allowNull: true,
+  defaultValue: DataTypes.NOW,
+},
       // Поля только для администратора
-      salary: { type: DataTypes.FLOAT, defaultValue: 400 },
+      salary: {
+  type: DataTypes.FLOAT,
+  allowNull: false,
+  defaultValue: 400,
+},
       lastSalaryIncreaseDate: {
-        type: DataTypes.DATE,
-        defaultValue: DataTypes.NOW,
-      },
+  type: DataTypes.DATEONLY,
+  allowNull: false,
+  defaultValue: DataTypes.NOW,
+},
       position: { type: DataTypes.STRING },
       mentorName: { type: DataTypes.STRING },
       vacationDates: {
@@ -45,11 +53,11 @@ module.exports = (sequelize, DataTypes) => {
         type: DataTypes.INTEGER,
         allowNull: true, // Можно установить значение по умолчанию
       },
-      hireDate: {
-        type: DataTypes.DATE,
-        allowNull: false,
-        defaultValue: DataTypes.NOW,
-      },
+     hireDate: {
+  type: DataTypes.DATEONLY,
+  allowNull: false,
+  defaultValue: DataTypes.NOW,
+},
     },
     {
       schema: "public",

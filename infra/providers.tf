@@ -45,8 +45,8 @@ provider "aws" {
 # --------------------------------------------------
 
 provider "kubernetes" {
-  host                   = var.kubernetes_host != "" ? var.kubernetes_host : null
-  cluster_ca_certificate = var.kubernetes_cluster_ca_certificate != "" ? base64decode(var.kubernetes_cluster_ca_certificate) : null
+  host                   = module.eks.cluster_endpoint
+  cluster_ca_certificate = base64decode(module.eks.cluster_certificate_authority_data)
 
   exec {
     api_version = "client.authentication.k8s.io/v1beta1"
@@ -70,8 +70,8 @@ provider "kubernetes" {
 provider "kubernetes" {
   alias = "post_eks"
 
-  host                   = var.kubernetes_host != "" ? var.kubernetes_host : null
-  cluster_ca_certificate = var.kubernetes_cluster_ca_certificate != "" ? base64decode(var.kubernetes_cluster_ca_certificate) : null
+  host                   = module.eks.cluster_endpoint
+  cluster_ca_certificate = base64decode(module.eks.cluster_certificate_authority_data)
 
   exec {
     api_version = "client.authentication.k8s.io/v1beta1"
@@ -94,8 +94,8 @@ provider "kubernetes" {
 
 provider "helm" {
   kubernetes = {
-    host                   = var.kubernetes_host != "" ? var.kubernetes_host : null
-    cluster_ca_certificate = var.kubernetes_cluster_ca_certificate != "" ? base64decode(var.kubernetes_cluster_ca_certificate) : null
+    host                   = module.eks.cluster_endpoint
+    cluster_ca_certificate = base64decode(module.eks.cluster_certificate_authority_data)
 
     exec = {
       api_version = "client.authentication.k8s.io/v1beta1"

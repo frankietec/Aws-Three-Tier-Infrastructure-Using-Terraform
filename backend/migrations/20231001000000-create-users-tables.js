@@ -1,4 +1,4 @@
-// migrations/XXXXXXXXXXXXXX-create-users-table.js
+
 'use strict';
 
 module.exports = {
@@ -6,127 +6,132 @@ module.exports = {
     await queryInterface.createTable('Users', {
       id: {
         allowNull: false,
-        autoIncrement: true, // Автоматическое увеличение ID
+        autoIncrement: true,
         primaryKey: true,
-        type: Sequelize.INTEGER
+        type: Sequelize.INTEGER,
       },
       firstName: {
         type: Sequelize.STRING,
-        allowNull: false
+        allowNull: false,
       },
       lastName: {
         type: Sequelize.STRING,
-        allowNull: false
+        allowNull: false,
       },
       middleName: {
         type: Sequelize.STRING,
-        allowNull: true
+        allowNull: false,
       },
       birthDate: {
         type: Sequelize.DATEONLY,
-        allowNull: false
+        allowNull: false,
       },
       phone: {
         type: Sequelize.STRING,
-        allowNull: false
+        allowNull: false,
       },
       email: {
         type: Sequelize.STRING,
         allowNull: false,
-        unique: true
+        unique: true,
       },
       programmingLanguage: {
         type: Sequelize.STRING,
-        allowNull: false
+        allowNull: false,
       },
       country: {
         type: Sequelize.STRING,
-        allowNull: true // Теперь поле допускает NULL
+        allowNull: true,
       },
       bankCard: {
         type: Sequelize.STRING,
-        allowNull: true
+        allowNull: true,
       },
       registrationDate: {
         type: Sequelize.DATE,
-        allowNull: true
+        allowNull: true,
+        defaultValue: Sequelize.literal('CURRENT_TIMESTAMP'),
       },
       lastLoginDate: {
         type: Sequelize.DATE,
-        allowNull: true
+        allowNull: true,
       },
       salary: {
-        type: Sequelize.INTEGER,
-        allowNull: false
+        type: Sequelize.FLOAT,
+        allowNull: false,
+        defaultValue: 400,
       },
       lastSalaryIncreaseDate: {
         type: Sequelize.DATEONLY,
-        allowNull: false
+        allowNull: false,
+        defaultValue: Sequelize.literal('CURRENT_DATE'),
       },
       position: {
         type: Sequelize.STRING,
-        allowNull: true
+        allowNull: true,
       },
       mentorName: {
         type: Sequelize.STRING,
-        allowNull: true
+        allowNull: true,
       },
       vacationDates: {
-        type: Sequelize.JSON, // Используем JSON для хранения массива дат
-        allowNull: true
+        type: Sequelize.JSONB,
+        allowNull: true,
       },
       hireDate: {
         type: Sequelize.DATEONLY,
-        allowNull: true, // или false, если поле обязательно
+        allowNull: false,
+        defaultValue: Sequelize.literal('CURRENT_DATE'),
       },
       githubLink: {
         type: Sequelize.STRING,
-        allowNull: true
+        allowNull: true,
       },
       linkedinLink: {
         type: Sequelize.STRING,
-        allowNull: true
+        allowNull: true,
       },
       adminNote: {
         type: Sequelize.TEXT,
-        allowNull: true
+        allowNull: true,
       },
       currentProject: {
         type: Sequelize.STRING,
-        allowNull: true
+        allowNull: true,
       },
       englishLevel: {
         type: Sequelize.STRING,
-        allowNull: true
+        allowNull: true,
       },
       workingHoursPerWeek: {
         type: Sequelize.INTEGER,
-        allowNull: true
+        allowNull: true,
       },
       role: {
         type: Sequelize.ENUM('employee', 'admin'),
-        allowNull: false
+        allowNull: false,
+        defaultValue: 'employee',
       },
       password: {
         type: Sequelize.STRING,
-        allowNull: false
+        allowNull: false,
       },
       createdAt: {
         allowNull: false,
         type: Sequelize.DATE,
-        defaultValue: Sequelize.literal('CURRENT_TIMESTAMP') // Значение по умолчанию
+        defaultValue: Sequelize.literal('CURRENT_TIMESTAMP'),
       },
       updatedAt: {
         allowNull: false,
         type: Sequelize.DATE,
-        defaultValue: Sequelize.literal('CURRENT_TIMESTAMP') // Значение по умолчанию
-      }
+        defaultValue: Sequelize.literal('CURRENT_TIMESTAMP'),
+      },
     }, {
-      schema: 'public' // Указываем схему
+      schema: 'public',
     });
   },
 
   down: async (queryInterface, Sequelize) => {
     await queryInterface.dropTable('Users', { schema: 'public' });
-  }
+  },
 };

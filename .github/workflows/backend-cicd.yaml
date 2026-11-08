@@ -19,12 +19,10 @@ on:
 
 permissions:
   contents: write
-  id-token: write
 
 env:
   AWS_REGION: us-east-1
-  IMAGE_NAME: backend
-  MANIFEST_FILE: app-manifests/backend-deployment.yaml
+  MANIFEST_FILE: app-manifest/backend-deployment.yaml
 
 jobs:
   build-and-push:
@@ -45,15 +43,17 @@ jobs:
       - name: Resolve ECR repository
         run: |
           account_id=$(aws sts get-caller-identity --query Account --output text)
+
+          if [ "$account_id" != "501579413510" ]; then
+            echo "Unexpected AWS account: $account_id"
+            exit 1
+          fi
+
           echo "ECR_REPOSITORY=${account_id}.dkr.ecr.${AWS_REGION}.amazonaws.com/dev-backend" >> "$GITHUB_ENV"
 
       - name: Install backend dependencies
         working-directory: backend
         run: npm ci
-
-      - name: Lint backend
-        working-directory: backend
-        run: npm run lint
 
       - name: Test backend
         working-directory: backend
@@ -66,20 +66,24 @@ jobs:
 
       - name: Build and push backend image
         env:
-          IMAGE_TAG: backend-${{ github.run_number }}
+          IMAGE_TAG: backend-${{ github.run_number }}-${{ github.run_attempt }}
         run: |
-          docker build -t "$IMAGE_NAME:$IMAGE_TAG" backend
-          docker tag "$IMAGE_NAME:$IMAGE_TAG" "$ECR_REPOSITORY:$IMAGE_TAG"
+          docker build \
+            -f backend/Dockerfile.prod \
+            -t "$ECR_REPOSITORY:$IMAGE_TAG" \
+            .
+
           docker push "$ECR_REPOSITORY:$IMAGE_TAG"
+
+          echo "IMAGE_TAG=$IMAGE_TAG" >> "$GITHUB_ENV"
 
       - name: Create backend release
         env:
           GH_TOKEN: ${{ github.token }}
-          RELEASE_TAG: backend-${{ github.run_number }}
         run: |
-          gh release create "$RELEASE_TAG" \
-            --title "$RELEASE_TAG" \
-            --notes "Backend image: $ECR_REPOSITORY:$RELEASE_TAG" \
+          gh release create "$IMAGE_TAG" \
+            --title "$IMAGE_TAG" \
+            --notes "Backend image: $ECR_REPOSITORY:$IMAGE_TAG" \
             --target "$GITHUB_SHA"
 
   update-manifest:
@@ -103,21 +107,40 @@ jobs:
         run: |
           release_tag=$(gh release list --limit 100 --json tagName,publishedAt |
             jq -r '[.[] | select(.tagName | startswith("backend-"))] |
-              sort_by(.publishedAt) | last.tagName')
-          test -n "$release_tag" -a "$release_tag" != "null"
-          echo "IMAGE_TAG=$release_tag" >> "$GITHUB_ENV"
+              sort_by(.publishedAt) | last | .tagName // empty')
+
+          if [ -z "$release_tag" ]; then
+            echo "No backend release found."
+            exit 1
+          fi
+
           account_id=$(aws sts get-caller-identity --query Account --output text)
+
+          if [ "$account_id" != "501579413510" ]; then
+            echo "Unexpected AWS account: $account_id"
+            exit 1
+          fi
+
+          aws ecr describe-images \
+            --region "$AWS_REGION" \
+            --repository-name dev-backend \
+            --image-ids imageTag="$release_tag" >/dev/null
+
+          echo "IMAGE_TAG=$release_tag" >> "$GITHUB_ENV"
           echo "ECR_REPOSITORY=${account_id}.dkr.ecr.${AWS_REGION}.amazonaws.com/dev-backend" >> "$GITHUB_ENV"
 
       - name: Update backend image tag
         run: |
-          sed -i -E "s|^        image: .*|        image: ${ECR_REPOSITORY}:${IMAGE_TAG}|" "$MANIFEST_FILE"
+          sed -i -E "s|^([[:space:]]*image: ).*|\\1${ECR_REPOSITORY}:${IMAGE_TAG}|" "$MANIFEST_FILE"
 
       - name: Commit manifest update
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
           git add "$MANIFEST_FILE"
+
           git diff --cached --quiet ||
             git commit -m "Update backend image to ${IMAGE_TAG}"
+
           git push

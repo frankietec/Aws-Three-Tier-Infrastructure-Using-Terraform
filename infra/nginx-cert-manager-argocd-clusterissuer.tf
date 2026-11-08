@@ -140,8 +140,8 @@ kind: Config
 clusters:
 - name: eks
   cluster:
-    server: ${var.kubernetes_host}
-    certificate-authority-data: ${var.kubernetes_cluster_ca_certificate}
+    server: ${module.eks.cluster_endpoint}
+    certificate-authority-data: ${module.eks.cluster_certificate_authority_data}
 
 contexts:
 - name: eks

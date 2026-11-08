@@ -3,36 +3,54 @@ module.exports = (sequelize, DataTypes) => {
   const Notification = sequelize.define(
     "Notification",
     {
-      message: { type: DataTypes.STRING, allowNull: false },
-      userId: { 
-        type: DataTypes.INTEGER, 
+      message: {
+        type: DataTypes.TEXT,
+        allowNull: false,
+      },
+      userId: {
+        type: DataTypes.INTEGER,
         allowNull: false,
         references: {
-          model: 'Users', // Имя таблицы Users
-          key: 'id',
+          model: "Users",
+          key: "id",
         },
-        onUpdate: 'CASCADE',
-        onDelete: 'CASCADE',
+        onUpdate: "CASCADE",
+        onDelete: "CASCADE",
       },
-      relatedUserId: { 
-        type: DataTypes.INTEGER, 
+      relatedUserId: {
+        type: DataTypes.INTEGER,
         allowNull: false,
         references: {
-          model: 'Users', // Имя таблицы Users
-          key: 'id',
+          model: "Users",
+          key: "id",
         },
-        onUpdate: 'CASCADE',
-        onDelete: 'CASCADE',
+        onUpdate: "CASCADE",
+        onDelete: "CASCADE",
       },
-      isRead: { type: DataTypes.BOOLEAN, defaultValue: false },
+      isRead: {
+        type: DataTypes.BOOLEAN,
+        allowNull: false,
+        defaultValue: false,
+      },
       type: {
-        type: DataTypes.STRING,
+        type: DataTypes.ENUM(
+          "birthday_reminder",
+          "birthday",
+          "salary_increase_reminder",
+          "salary_increased",
+          "salary_threshold_reached",
+          "welcome",
+          "general",
+          "employee_created",
+          "user_update"
+        ),
         allowNull: false,
         defaultValue: "general",
       },
       eventDate: {
-        type: DataTypes.DATE,
-        allowNull: true,
+        type: DataTypes.DATEONLY,
+        allowNull: false,
+        defaultValue: sequelize.literal("CURRENT_DATE"),
       },
     },
     {
@@ -42,15 +60,15 @@ module.exports = (sequelize, DataTypes) => {
     }
   );
 
-  // Ассоциации
-  Notification.associate = function(models) {
+  Notification.associate = function (models) {
     Notification.belongsTo(models.User, {
-      foreignKey: 'userId',
-      as: 'user'
+      foreignKey: "userId",
+      as: "user",
     });
+
     Notification.belongsTo(models.User, {
-      foreignKey: 'relatedUserId',
-      as: 'relatedUser'
+      foreignKey: "relatedUserId",
+      as: "relatedUser",
     });
   };
 
