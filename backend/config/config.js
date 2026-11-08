@@ -1,10 +1,14 @@
+
 // config/config.js
 
 require('dotenv').config();
 
-// Функция для логирования переменных окружения (для отладки)
+const fs = require('fs');
+const path = require('path');
+
 function logEnvVariables(env) {
   console.log('=== Environment Variables ===');
+
   if (env === 'production') {
     console.log(`DATABASE_URL: ${process.env.DATABASE_URL ? '******' : 'Not Set'}`);
   } else {
@@ -14,6 +18,7 @@ function logEnvVariables(env) {
     console.log(`DB_USER: ${process.env.DB_USER}`);
     console.log(`DB_PASSWORD: ${process.env.DB_PASSWORD ? '******' : 'Not Set'}`);
   }
+
   console.log(`JWT_SECRET: ${process.env.JWT_SECRET ? '******' : 'Not Set'}`);
   console.log(`SECRET_WORD: ${process.env.SECRET_WORD ? '******' : 'Not Set'}`);
   console.log(`NODE_ENV: ${process.env.NODE_ENV}`);
@@ -22,7 +27,6 @@ function logEnvVariables(env) {
 }
 
 const env = process.env.NODE_ENV || 'development';
-const isProduction = env === 'production';
 
 logEnvVariables(env);
 
@@ -34,11 +38,12 @@ const config = {
     host: process.env.DB_HOST || '127.0.0.1',
     port: process.env.DB_PORT || 5432,
     dialect: 'postgres',
-    schema: 'public', // Если вы используете схему
+    schema: 'public',
     dialectOptions: {
-      ssl: false, // В локальной разработке SSL не требуется
+      ssl: false,
     },
   },
+
   test: {
     username: process.env.DB_USER || 'postgres',
     password: process.env.DB_PASSWORD || 'postgres',
@@ -46,26 +51,30 @@ const config = {
     host: process.env.DB_HOST || '127.0.0.1',
     port: process.env.DB_PORT || 5432,
     schema: 'public',
+    dialect: 'postgres',
     dialectOptions: {
       ssl: false,
     },
-    dialect: 'postgres',
-    logging: false, // Disable SQL logging in tests
+    logging: false,
   },
+
   production: {
     use_env_variable: 'DATABASE_URL',
     dialect: 'postgres',
     dialectOptions: {
       ssl: {
         require: true,
-        rejectUnauthorized: false, // В некоторых случаях это помогает устранить ошибки сертификата
+        rejectUnauthorized: true,
+        ca: fs.readFileSync(
+          path.join(__dirname, '../certs/rds-global-bundle.pem'),
+          'utf8'
+        ),
       },
     },
     logging: console.log,
   },
 };
 
-// Логирование текущей конфигурации базы данных для отладки
-console.log('Current DB Configuration:', config[env]);
+console.log('Current environment:', env);
 
 module.exports = config;

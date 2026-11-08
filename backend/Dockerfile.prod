@@ -1,3 +1,4 @@
+
 # Production Dockerfile for Backend
 FROM node:24-slim
 
@@ -9,7 +10,7 @@ WORKDIR /app
 # Copy package files from the backend directory
 COPY backend/package*.json ./
 
-# Install all dependencies (including devDependencies needed for build/migrations)
+# Install dependencies
 RUN npm ci
 
 # Set NODE_ENV=production for runtime
@@ -19,8 +20,11 @@ ENV NODE_ENV=production
 COPY backend/entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
 
-# Copy backend application code ONLY (prevents copying frontend into /app)
+# Copy backend application code ONLY
 COPY backend/ .
+
+# Copy official AWS RDS CA certificate bundle
+COPY backend/certs/rds-global-bundle.pem ./certs/rds-global-bundle.pem
 
 # Expose port
 EXPOSE 3000
