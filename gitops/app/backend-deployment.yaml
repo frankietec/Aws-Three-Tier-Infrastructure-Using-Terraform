@@ -45,3 +45,13 @@ spec:
                 secretKeyRef:
                   name: rds-credentials
                   key: database_url
+            - name: JWT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: backend-app-secrets
+                  key: JWT_SECRET
+            - name: SECRET_WORD
+              valueFrom:
+                secretKeyRef:
+                  name: backend-app-secrets
+                  key: SECRET_WORD
