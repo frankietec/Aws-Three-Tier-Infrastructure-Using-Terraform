@@ -1,3 +1,4 @@
+
 name: Backend CI/CD
 
 on:
@@ -28,6 +29,33 @@ jobs:
   build-and-push:
     if: github.event_name == 'push' || inputs.action == 'build'
     runs-on: ubuntu-latest
+
+    # Disposable PostgreSQL database for automated tests only.
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: my_database_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d my_database_test"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    # Test-only environment variables. Never use production credentials here.
+    env:
+      NODE_ENV: test
+      DB_HOST: 127.0.0.1
+      DB_PORT: 5432
+      DB_NAME_TEST: my_database_test
+      DB_USER: postgres
+      DB_PASSWORD: postgres
+      JWT_SECRET: test_jwt_secret
+      SECRET_WORD: test_secret_word
 
     steps:
       - name: Checkout repository
@@ -136,7 +164,7 @@ jobs:
       - name: Commit manifest update
         run: |
           git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git config user.email "41898282+users.noreply.github.com"
 
           git add "$MANIFEST_FILE"
 
