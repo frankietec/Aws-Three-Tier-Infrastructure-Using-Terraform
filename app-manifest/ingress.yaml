@@ -3,9 +3,8 @@ kind: Ingress
 metadata:
   name: app-ingress
   namespace: default  # REPLACE with your target namespace if different
-  annotations:    
-    cert-manager.io/cluster-issuer: "letsencrypt-prod"   
 spec:
+  ingressClassName: nginx
   tls:
   - hosts:
      - fkvr.xyz

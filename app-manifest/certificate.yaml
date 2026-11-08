@@ -4,10 +4,10 @@ metadata:
   name: frontend-tls
   namespace: default
 spec:
-  secretName: frontend-tls-secret
+  secretName: app-tls-secret
   dnsNames:
     - fkvr.xyz
     - api.fkvr.xyz
   issuerRef:
-    name: letsencrypt-prod
+    name: http-01-production
     kind: ClusterIssuer
